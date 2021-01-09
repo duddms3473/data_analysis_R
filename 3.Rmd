@@ -1,0 +1,355 @@
+#데이터분석 과제2
+##LeeYoungEun
+
+
+**1-1**
+
+```{r}
+library(ggplot2)
+CC<-read.csv("ClimateChange.csv")
+CC_1<-CC[,-1:-2]
+library(ggcorrplot)
+corr<-round(cor(CC_1),1)
+ggcorrplot(corr,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw,title="9개 변수들 간의 상관관계")
+
+
+```
+
+기후변화와 관련되어진다고 생각되는 9개 변수들 간의 상관관계를 나타낸 그래프이다.
+Corr은 상관 계수로, 더 빨강색일수록 강한 양의 상관관계가 있다. 보라색일수록 강한 음의 상관관계가 있다.
+
+**1-2**
+
+```{r}
+CC_test<-CC[CC$Year>=2004,]
+CC_test<-CC_test[,-1:-2]
+CC_train<-CC[CC$Year<=2003,]
+CC_train<-CC[,-1:-2]
+
+LR<-lm(Temp~.,data=CC_train)
+summary(LR)
+```
+
+Temp와 8개의 변수를 이용해 Linear Regression 한 결과이다.
+
+(a) MEI, CO2, CFC.11, CFC.12, TSI, Aerosols 는 모두 p-value 값이 0.01 이하로 매우 의미 있는 회귀계수로 나타났다. 따라서 Temp에 많은 영향을 주는 요인들로 알 수 있다.
+
+(b) N2O와 CFC.11 의 coefficient 값은 음수를 갖는다.
+
+솔직히 잘 모르겠습니다만 추측을 해보면..
+문제 1번에서 N2O는 MEI와 상관계수가 음수로 나왔습니다. 따라서 N2O가 증가하면 MEI가 감소하므로 MEI의 감소가 영향을 줬다고 추측을 해봤습니다.. 
+2번의 결과를 보면 MEI는 온도변화와 가장 큰 상관관계를 갖는 요인 중 하나로 나왔습니다.
+
+**1-3**
+
+```{r}
+LR_3<-lm(Temp~MEI+TSI+Aerosols+N2O,data=CC_train)
+summary(LR_3)
+```
+
+```{r}
+library(caret)
+set.seed(123)
+#8개의요인
+cv_train1<-train(form=Temp~.,data=CC_train,method="lm",
+                 trControl=trainControl(method="repeatedcv",number=10,repeats=10))
+cv_train1
+```
+```{r}
+set.seed(123)
+#4개의요인
+cv_train2<-train(form=Temp~MEI+TSI+Aerosols+N2O,data=CC_train,method="lm",
+                 trControl=trainControl(method="repeatedcv",number=10,repeats=10))
+cv_train2
+```
+```{r}
+summary(resamples(list(model1=cv_train1,model2=cv_train2)))
+```
+
+(a) N2O 변수의 coefficient
+2번모델 : -1.693e-02
+3번모델 : 2.366e-02
+
+2번모델에서는 Temp에 음의 영향을 끼치지만 3번모델에서는 Temp에 양의 영향을 끼치는 것으로 나타났다.
+
+(b)
+
+2번모델 : 
+Multiple R-squared:  0.744,	Adjusted R-squared:  0.7371, RMSE: 0.09226384
+
+3번모델 : 
+Multiple R-squared:  0.7161,	Adjusted R-squared:  0.7124, RMSE: 0.09585215
+
+결과적으로 2번모델의 R-squared 값과 Adjusted R-squared값이 3번모델보다 큰 것으로 나타났다.
+Adjusted R-squared 값은 test error의 크기와 반비례하는 경향이 있다.
+그리고 RMSE는 평균 제곱근 편차로 작을수록 오차가 적다. 2번모델이 3번모델보다 RMSE가 더 작다.
+따라서 8개의 변수를 모두이용한 2번모델이 더 우수한 예측 성능을 갖는다.
+
+**1-4**
+
+```{r}
+library(caret)
+library(leaps)
+train.control<-trainControl(method="repeatedcv",number=10,repeats=10)
+set.seed(123)
+
+#Forward
+fwd_model<-train(Temp~.,data=CC_train,method="leapForward",tuneGrid=data.frame(nvmax=1:8),trControl=train.control)
+fwd_model$bestTune
+coef_fwd_cv<-coef(fwd_model$finalModel,fwd_model$bestTune$nvmax)
+coef_fwd_cv
+test.mat <- model.matrix(Temp ~ ., data=CC_test)
+test_pred_fwd_cv<-test.mat[,names(coef_fwd_cv)]%*%coef_fwd_cv
+RMSE(test_pred_fwd_cv,CC_test$Temp)
+
+#Backward
+set.seed(123)
+train.control<-trainControl(method="repeatedcv",number=10,repeats=10)
+bwd_model<-train(Temp~.,data=CC_train,method="leapBackward",tuneGrid=data.frame(nvmax=1:8),trControl=train.control)
+bwd_model$bestTune
+coef_bwd_cv<-coef(bwd_model$finalModel,bwd_model$bestTune$nvmax)
+coef_bwd_cv
+test_pred_bwd_cv<-test.mat[,names(coef_bwd_cv)]%*%coef_bwd_cv
+RMSE(test_pred_bwd_cv,CC_test$Temp)
+
+#최종모델
+reg_bwd_best<-regsubsets(Temp~.,data=CC_1,nvmax=8,method="backward")
+coef_bwd_best<-coef(reg_bwd_best,7)
+coef_bwd_best
+```
+
+a. Forward RMSE : 0.0773725
+Backward RMSE : 0.0773725
+
+Forward와 Backward 결과 모두 같게 나왔다. 그리고 둘 다 7개의 feature를 선택 했다.
+
+b. nvmax=7로 설정한 모델이 가장 우수하다.
+
+**1-5**
+
+```{r}
+set.seed(123)
+#forward
+fwd_model<-train(Temp~(.)^2+I(CO2^2)+I(CFC.11^2)+I(CFC.12^2),data=CC_train,method="leapForward",
+                 tuneGrid=data.frame(nvmax=1:39),trControl=trainControl(method="repeatedcv",number=10,repeats=5))
+ggplot(fwd_model)
+fwd_model$bestTune
+coef_fwd_cv<-coef(fwd_model$finalModel,23)
+coef_fwd_cv
+test_pred_fwd<-predict(fwd_model,newdata=CC_test)
+RMSE(test_pred_fwd,CC_test$Temp)
+```
+
+Forward selection을 할 경우, nvmax=23일 때 가장 예측성능이 우수하다.
+Forward selection RMSE 결과 : 0.07107754
+
+```{r}
+#backward
+bwd_model<-train(Temp~(.)^2+I(CO2^2)+I(CFC.11^2)+I(CFC.12^2),data=CC_train,method="leapBackward",
+                 tuneGrid=data.frame(nvmax=1:39),trControl=trainControl(method="repeatedcv",number=10,repeats=5))
+ggplot(bwd_model)
+bwd_model$bestTune
+coef_bwd_cv<-coef(bwd_model$finalModel,36)
+coef_bwd_cv
+test_pred_bwd<-predict(bwd_model,newdata=CC_test)
+RMSE(test_pred_bwd,CC_test$Temp)
+```
+
+Backward selection을 할 경우, nvmax=36일 때 가장 예측성능이 우수하다.
+Backward selection RMSE 결과 : 0.07015534
+
+Backward selection으로 나온 nvmax=36일 때 RMSE가 가장 낮게나와 성능이 제일 좋다.
+
+```{r}
+#최종모델
+final_reg<-regsubsets(Temp~(.)^2+I(CO2^2)+I(CFC.11^2)+I(CFC.12^2),data=CC_1,nvmax=36,method="backward")
+coef_final<-coef(final_reg,36)
+coef_final
+```
+
+전체 데이터를 nvmax=36 backward로 분석한 결과이다.
+해당하는 36가지 변수들이 best model에 포함된다.
+
+**1-6**
+```{r}
+#2번모델
+LR<-lm(Temp~.,data=CC_test)
+summary(LR)
+test_LR<-predict(LR,newdata=CC_test)
+RMSE(test_LR,CC_test$Temp)
+#3번모델
+LR_test_3<-lm(Temp~MEI+TSI+Aerosols+N2O,data=CC_test)
+summary(LR_3)
+test_LR3<-predict(LR_test_3,newdata=CC_test)
+RMSE(test_LR3,CC_test$Temp)
+#4번모델
+reg_test_best<-regsubsets(Temp~.,data=CC_test,nvmax=8,method="backward")
+coef_test_best<-coef(reg_test_best,7)
+test_bwd_cv<-test.mat[,names(coef_test_best)]%*%coef_test_best
+RMSE(test_bwd_cv,CC_test$Temp)
+#5번모델
+reg_test_best<-regsubsets(Temp~(.)^2+I(CO2^2)+I(CFC.11^2)+I(CFC.12^2),data=CC_test,nvmax=39,method="backward")
+coef_test_best<-coef(reg_test_best,36)
+test.mat <- model.matrix(Temp~(.)^2+I(CO2^2)+I(CFC.11^2)+I(CFC.12^2), data=CC_test)
+test_bwd_cv<-test.mat[,names(coef_test_best)]%*%coef_test_best
+RMSE(test_bwd_cv,CC_test$Temp)
+```
+	    
+	    RMSE값
+2번모델 : 0.06511537
+3번모델 : 0.06555509
+4번모델 : 0.0651191
+5번모델 : 0.03300156
+
+가장 오차가 적을거라고 생각한 5번모델의 RMSE값이 예측한대로 가장 적게 나왔다.
+
+**2-1**
+
+```{r}
+set.seed(123)
+x<-rnorm(100)
+set.seed(4)
+eps<-rnorm(100,0,3)
+Y<-1+2*x+3*(x^2)+4*(x^3)+eps
+
+dat<-data.frame(x)
+dat[,2]<-Y
+names(dat)[2]='Y'
+
+x2<-x^2
+Y2<-1+2*x2+3*(x2^2)+4*(x2^3)+eps
+dat2<-data.frame(x2)
+dat2[,2]<-Y2
+names(dat2)[2]='Y'
+
+x3<-x^3
+Y3<-1+2*x3+3*(x3^2)+4*(x3^3)+eps
+dat3<-data.frame(x3)
+dat3[,2]<-Y3
+names(dat3)[2]='Y'
+
+x4<-x^4
+Y4<-1+2*x4+3*(x4^2)+4*(x4^3)+eps
+dat4<-data.frame(x4)
+dat4[,2]<-Y4
+names(dat4)[2]='Y'
+
+x5<-x^5
+Y5<-1+2*x5+3*(x5^2)+4*(x5^3)+eps
+dat5<-data.frame(x5)
+dat5[,2]<-Y5
+names(dat5)[2]='Y'
+
+x6<-x^6
+Y6<-1+2*x6+3*(x6^2)+4*(x6^3)+eps
+dat6<-data.frame(x6)
+dat6[,2]<-Y6
+names(dat6)[2]='Y'
+
+x7<-x^7
+Y7<-1+2*x7+3*(x7^2)+4*(x7^3)+eps
+dat7<-data.frame(x7)
+dat7[,2]<-Y7
+names(dat7)[2]='Y'
+
+x8<-x^8
+Y8<-1+2*x8+3*(x8^2)+4*(x8^3)+eps
+dat8<-data.frame(x8)
+dat8[,2]<-Y8
+names(dat8)[2]='Y'
+
+x9<-x^9
+Y9<-1+2*x9+3*(x9^2)+4*(x9^3)+eps
+dat9<-data.frame(x9)
+dat9[,2]<-Y9
+names(dat9)[2]='Y'
+
+x10<-x^10
+Y10<-1+2*x10+3*(x10^2)+4*(x10^3)+eps
+dat10<-data.frame(x10)
+dat10[,2]<-Y10
+names(dat10)[2]='Y'
+
+cor1<-cor(dat)
+cor2<-cor(dat2)
+cor3<-cor(dat3)
+cor4<-cor(dat4)
+cor5<-cor(dat5)
+cor6<-cor(dat6)
+cor7<-cor(dat7)
+cor8<-cor(dat8)
+cor9<-cor(dat9)
+cor10<-cor(dat10)
+
+ggcorrplot(cor1,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor2,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor3,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor4,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor5,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor6,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor7,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor8,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor9,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+ggcorrplot(cor10,hc.order = TRUE,type="lower",
+           lab=TRUE,lab_size=3,method="circle",
+           ggtheme=theme_bw)
+```
+
+**2-2**
+
+```{r}
+lr1<-lm(Y~.,dat)
+summary(lr1)
+```
+
+###2-3
+```{r}
+# 모든 feture를 포함하는 regression model 수립
+model2 <- lm(Y~X1+X2+X3, data=df)
+summary(model2)
+```
+
+###2-4
+```{r}
+# feature matrix 분리 
+X <- model.matrix(Y~., df)[,-1]
+Y <- df$Y
+
+# Lasso regression 수행
+lasso <- glmnet(x = X, y = Y, alpha = 1)
+
+plot(lasso, xvar="lambda")
+
+# cross validation 수행
+set.seed(123)
+cv_lasso <- cv.glmnet(x = X, y = Y, alpha = 1, nfolds = 10)
+
+plot(cv_lasso)
+
+# best lambda 찾기
+best_lambda_lasso <- cv_lasso$lambda.min
+best_lambda_lasso
+
+# 최종 model의 coefficient 출력
+predict(lasso, s = best_lambda_lasso, type = "coefficients")[1:11,]
+```

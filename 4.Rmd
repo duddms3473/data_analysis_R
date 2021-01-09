@@ -1,0 +1,296 @@
+---
+title: "Assignment #4"
+subtitle: "Data Analysis with Applications"
+author: "이영은"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document: 
+    highlight: pygments
+  pdf_document: default
+---
+
+```{r}
+library(ROCR)
+library(ggplot2)
+library(psych)
+library(rsample)
+library(caret)
+library(vip)
+library(glmnet)
+```
+*1번*
+```{r}
+fr<-read.csv("flightRecords.csv")
+fr<-fr[c(2,3,4,8,9,10,13)]
+fr<-subset(fr,fr$deptime>=600&fr$deptime<=2159)
+fr$deptime<-factor(as.integer(fr$deptime/100))
+fr$dayweek<-factor(x=fr$dayweek,levels=c(1:7),labels=c("Mon","Tue","Wed","Thu","Fri","Sat","Sun"))
+fr$weather<-factor(x=fr$weather,levels=c(0,1),labels=c("OK","Bad"))
+fr$delay<-factor(x=fr$delay,levels=c("ontime","delayed"))
+str(fr)
+```
+→ 필요한 변수 7개만 받아주고, factor로 잘 변경된것을 확인 할 수 있다.
+
+*2번*
+
+```{r}
+#요일별 연착비율
+dayweek<-aggregate(fr$delay=="delayed",by=list(fr$dayweek),FUN=mean)
+ggplot(dayweek,aes(x=Group.1,y=x))+geom_bar(stat="identity",fill="skyblue")+geom_text(aes(label=round(x,digits=3)),vjust=-0.3)+labs(x="요일",y="연착비율")
+```
+
+→ 월요일과 일요일은 약 26%, 토요일은 약 8% 상대적으로 토요일이 연착이 적은 것을 알 수 있다.
+
+```{r}
+#출발시간대별 연착비율              
+deptime<-aggregate(fr$delay=="delayed",by=list(fr$deptime),FUN=mean)
+ggplot(deptime,aes(x=Group.1,y=x))+geom_bar(stat="identity",fill="skyblue")+geom_text(aes(label=round(x,digits=3)),vjust=-0.3,size=2.5)+labs(x="출발시간",y="연착비율")
+```
+
+→ 19시에 출발한 비행기는 약 52%로 연착 비율이 가장 높다.
+그리고 6시에 출발한 비행기는 연착 비율이 약 6%로 가장 적다.
+
+```{r}
+#출발공항별 연착비율                      
+origin<-aggregate(fr$delay=="delayed",by=list(fr$origin),FUN=mean)
+ggplot(origin,aes(x=Group.1,y=x))+geom_bar(stat="identity",fill="skyblue")+geom_text(aes(label=round(x,digits=3)),vjust=1.5,size=4)+labs(x="출발공항",y="연착비율")
+
+#도착공항별연착비율                                  
+dest<-aggregate(fr$delay=="delayed",by=list(fr$dest),FUN=mean)
+ggplot(dest,aes(x=Group.1,y=x))+geom_bar(stat="identity",fill="skyblue")+geom_text(aes(label=round(x,digits=3)),vjust=1.5,size=4)+labs(x="도착공항",y="연착비율")
+
+#항공사별 연착비율
+carrier<-aggregate(fr$delay=="delayed",by=list(fr$carrier),FUN=mean)
+ggplot(carrier,aes(x=Group.1,y=x))+geom_bar(stat="identity",fill="skyblue")+geom_text(aes(label=round(x,digits=3)),vjust=1.5,size=4)+labs(x="항공사",y="연착비율")
+```
+
+→ US항공사는 약 9%로 모든항공사에서 연착비율이 가장 적게 나타났고, MQ항공사는 약 29%로 모든항공사에서 연착비율이 가장 많게 나타났다.
+
+```{r}
+#날씨별 연착비율                                        
+weather<-aggregate(fr$delay=="delayed",by=list(fr$weather),FUN=mean)
+ggplot(weather,aes(x=Group.1,y=x))+geom_bar(stat="identity",fill="skyblue")+geom_text(aes(label=round(x,digits=3)),vjust=1.5,size=4)+labs(x="날씨",y="연착비율")
+
+```
+
+→ 날씨가 안좋으면 연착비율은 100%로 나타났다. 날씨가 연착비율에 영향을 끼친다는 것을 알 수 있다.
+
+*3번*
+
+```{r}
+pairs.panels(fr)
+```
+
+→ '날씨'와 '지연'과의 상관계수가 0.25로 나왔다.
+다른 요소들에 비해 날씨와 지연은 관계가 있는것으로 나왔다.
+
+*4번*
+
+```{r}
+split<-initial_split(fr,prop=0.7,strata="delay")
+fr_train<-training(split)
+fr_test<-testing(split)
+
+table(fr_train$delay)
+table(fr_test$delay)
+```
+
+→ training set과 test set의 비율이 적절하게 배분된걸 볼수있다.
+
+*5번*
+
+```{r}
+set.seed(123)
+pred_base<-factor(sign(fr_test$weather=="Bad"),levels=c(0,1),labels=c("ontime","delayed"))
+confusionMatrix(pred_base,fr_test$delay,positive="delayed")
+```
+
+→ accuracy : 약 82.84%
+
+*6번*
+
+```{r}
+#(1)
+set.seed(123)
+model1=glm(delay~.,data=fr_train,family="binomial")
+summary(model1)
+vip(model1)
+coef(model1)
+```
+
+→ 가장 영향을 끼치는 요소는 deptime19로 나타났다.
+deptime19 의 coefficient는 2.80328131, pvalue 는 8.87e-10로 매우 유효하다고 나왔다.
+19시에 출발하는 비행기는 연착가능성이 높다.
+
+```{r}
+#(2)
+set.seed(123)
+x<-data.frame(carrier="DL",deptime="15",dest="JFK",origin="IAD",weather="OK",dayweek="Fri")
+predict(model1,newdata=x,type="response")
+```
+
+→ 0.2894196로, 연착될 확률은 약 28.94%이다.
+
+```{r}
+#(3)
+set.seed(123)
+test_prob=predict(model1,fr_test,type="response")
+pred_test<-rep("ontime",647)
+pred_test[test_prob>0.2]<-"delayed"
+confusionMatrix(factor(pred_test,levels=c("ontime","delayed")),fr_test$delay,positive="delayed")
+
+pred_test<-rep("ontime",647)
+pred_test[test_prob>0.3]<-"delayed"
+confusionMatrix(factor(pred_test,levels=c("ontime","delayed")),fr_test$delay,positive="delayed")
+                
+pred_test<-rep("ontime",647)
+pred_test[test_prob>0.5]<-"delayed"
+confusionMatrix(factor(pred_test,levels=c("ontime","delayed")),fr_test$delay,positive="delayed")
+
+pred_test<-rep("ontime",647)
+pred_test[test_prob>0.7]<-"delayed"
+confusionMatrix(factor(pred_test,levels=c("ontime","delayed")),fr_test$delay,positive="delayed")
+```
+→ 
+k=0.2, accuracy=0.6677
+k=0.3, accuracy=0.762
+k=0.5, accuracy=0.8362
+k=0.7, accuracy=0.8331
+
+→ k=0.5일때 가장 정확도가 높게나타났다. 그리고 0.7일때도 0.2와 0.3보다 높게 나타났다.
+0.5보다 높은경우 지연된다고 예측한게 정확도가 더 높다.
+
+```{r}
+#(4)
+```
+
+→ 5번의 baseline model accuracy : 약 82.69%
+6번의 k=0.5, logistic regression model accuracy : 약 84.23%로 
+
+→ 날씨가 안좋으면 delayed로 가정하는것 보다, 연착비율이 0.5가 넘을경우 delayed로 가정하는것이 정확도가 더 높게 나타났다.
+
+*7번*
+
+```{r}
+set.seed(123)
+model_step<-step(model1,direction="backward")
+coef(model_step)
+prob_test=predict(model_step,newdata=fr_test,type="response")
+pred_test<-rep("ontime",647)
+pred_test[prob_test>0.5]<-"delayed"
+confusionMatrix(factor(pred_test,levels=c("ontime","delayed")),fr_test$delay,positive="delayed")
+```
+
+→ (1) carrierDH   carrierDL   carrierMQ   carrierOH 
+carrierRU   carrierUA   carrierUS    deptime7    deptime8
+deptime9   deptime10   deptime11   deptime12   deptime13
+deptime14   deptime15   deptime16   deptime17   deptime18
+deptime19   deptime20   deptime21   originDCA   originIAD
+weatherBad  dayweekTue  dayweekWed  dayweekThu  dayweekFri
+dayweekSat  dayweekSun 총 31개의 변수들이 포함되어있다.
+
+→ (2) 약 84.54의 accuracy가 나왔다.
+
+*8번*
+
+```{r}
+set.seed(123)
+trainX<-model.matrix(delay~.,data=fr_train)[,-1]
+trainY<-fr_train$delay
+
+cv_lasso<-cv.glmnet(x=trainX,y=trainY,alpha=1,family="binomial",type.measure="auc",nfolds=10)
+plot(cv_lasso)
+cv_lasso$nzero
+cv_lasso$lambda
+lambda<-cv_lasso$lambda[21]
+coef(cv_lasso,s=lambda)
+
+pred_prob<-predict(cv_lasso,newx=model.matrix(delay~.,data=fr_test)[,-1],s=lambda,type="response")
+
+pred_test<-rep("ontime",647)
+pred_test[pred_prob>0.5]<-"delayed"
+
+confusionMatrix(factor(pred_test,levels=c("ontime","delayed")),fr_test$delay,positive="delayed")
+
+
+
+```
+
+→ (1)
+carrier : DL, MQ, US
+deptime : 8,10,12,13,14,15,18,19
+origin : DCA
+weather : Bad
+dayweek : Sat, Sun
+
+→ (2) 약 83.31%의 accuracy를 갖는다.
+
+*9번*
+
+```{r}
+#(6) >0.5
+set.seed(123)
+model1=glm(delay~.,data=fr_train,family="binomial")
+test_prob=predict(model1,fr_test,type="response")
+pred<-prediction(test_prob,fr_test$delay,c("ontime","delayed"))
+perf<-performance(pred,measure="tpr",x.measure="fpr")
+plot(perf,col="skyblue",lwd=3)
+auc<-performance(pred,measure="auc")
+auc <- auc@y.values[[1]]; auc
+```
+
+→ 6번 모델의 AUC는 0.7403357
+
+```{r}
+#(7)
+set.seed(123)
+model_step<-step(model1,direction="backward")
+prob_test=predict(model_step,newdata=fr_test,type="response")
+pred<-prediction(prob_test,fr_test$delay,c("ontime","delayed"))
+perf<-performance(pred,measure="tpr",x.measure="fpr")
+plot(perf,col="skyblue",lwd=3)
+auc<-performance(pred,measure="auc")
+auc<-auc@y.values[[1]];auc
+```
+
+→ 7번 모델의 AUC는 0.7404372
+
+```{r}
+#(8)
+set.seed(123)
+pred_prob<-predict(cv_lasso,newx=model.matrix(delay~.,data=fr_test)[,-1],s=lambda,type="response")
+pred<-prediction(pred_prob,fr_test$delay,c("ontime","delayed"))
+perf<-performance(pred,measure="tpr",x.measure="fpr")
+plot(perf,col="skyblue",lwd=3)
+auc<-performance(pred,measure="auc")
+auc<-auc@y.values[[1]];auc
+```
+
+→ 8번 모델의 AUC는 0.7277361
+
+→ AUC 결과 :
+6번 모델의 AUC는 0.7403357
+7번 모델의 AUC는 0.7404372
+8번 모델의 AUC는 0.7277361
+
+7번모델의 AUC가 조금 더 높다. 다른 모델보다 조금 더좋은 모델이다.
+
+*10번*
+
+```{r}
+set.seed(123)
+knn<-train(data=fr_train,delay~.,method="knn",trControl=trainControl(method="cv",number=10))
+knn$bestTune
+
+pred_knn<-predict(knn,newdata=fr_test)
+
+pred_test<-rep("ontime",647)
+pred_test[pred_knn=="delayed"]<-"delayed"
+
+confusionMatrix(factor(pred_test,levels=c("ontime","delayed")),fr_test$delay,positive="delayed")
+```
+
+→ best k 값은 5로 나왔다.
+Accuracy는 0.8192이다.
+
+logistic regression 모델 중 threshold를 0.5로 설정해준 모델이 가장 정확도가 높게 나왔다.

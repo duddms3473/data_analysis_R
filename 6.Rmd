@@ -1,0 +1,192 @@
+---
+title: "data analysis assignment 6"
+author: "Lee Young Eun"
+date: '2020 6 1 '
+output:
+  html_document: 
+    highlight: pygments
+  pdf_document: default
+---
+
+```{r message=FALSE}
+#라이브러리 추가
+library(wordcloud)
+library(tm)
+library(SnowballC)
+library(rsample)
+library(caret)
+library(randomForest)
+library(rpart.plot)
+library(ROCR)
+```
+
+<br/>
+#### 1번
+
+```{r}
+imdb <- read.csv("imdb.csv",stringsAsFactors = FALSE, encoding = "UTF-8")
+imdb$sentiment<-factor(imdb$sentiment)
+pos<-subset(imdb,sentiment=="positive")
+neg<-subset(imdb,sentiment=="negative")
+wordcloud(pos$review,max.words=40,colors=brewer.pal(8,"Dark2"))
+wordcloud(neg$review,max.words = 40,colors=brewer.pal(8,"Dark2"))
+```
+
+* 아직은 preprocessing을 하지않아 겹치는 단어가 많이 보인다.
+* positive에는 great라는 긍정의 단어가 자주 등장했으며, negative에서는 bad라는 단어가 자주 등장했다.
+
+<br/>
+#### 2번-A
+```{r}
+imdb_corpus<-VCorpus(VectorSource(imdb$review))
+imdb_corpus_clean<-tm_map(imdb_corpus,content_transformer(tolower))
+imdb_corpus_clean<-tm_map(imdb_corpus_clean,removeNumbers)
+imdb_corpus_clean<-tm_map(imdb_corpus_clean,removeWords,stopwords())
+imdb_corpus_clean<-tm_map(imdb_corpus_clean,removePunctuation)
+imdb_corpus_clean<-tm_map(imdb_corpus_clean,stemDocument)
+imdb_corpus_clean<-tm_map(imdb_corpus_clean,stripWhitespace)
+```
+
+<br/>
+#### 2번-B
+```{r}
+imdb_corpus_clean<-tm_map(imdb_corpus_clean,removeWords,"movi")
+imdb_corpus_clean<-tm_map(imdb_corpus_clean,removeWords,"film")
+imdb_corpus_clean<-tm_map(imdb_corpus_clean,stripWhitespace)
+```
+<br/>
+#### 2번-C
+```{r}
+imdb$review[[6]]
+imdb_corpus_clean[[6]]$content
+```
+
+* 우선, movie film과 같은 모든 리뷰에 자주 등장하는 단어가 사라졌다.
+* 소문자로 통일되고, 숫자가 제거되었으며, 인칭 대명사같은 의미없는 단어가 사라졌다.
+* 문장부호도 사라지고 텍스트 분석을 더 효율 높게 할 수 있도록 바꼈다.
+
+<br/>
+#### 3번
+```{r}
+imdb_dtm<-DocumentTermMatrix(imdb_corpus_clean)
+imdb_dtm
+```
+
+* DTM : 10000개의 리뷰 중 48702개의 단어를 추출했다.
+
+```{r}
+imdb_tfidf<-weightTfIdf(imdb_dtm)
+imdb_tfidf
+```
+
+* TF-IDF : 10000개의 리뷰 중 48702개의 단어를 추출했다.
+
+```{r}
+imdb_dtm2<-removeSparseTerms(imdb_dtm,0.950)
+imdb_dtm2
+```
+
+* DTM : 전체 review중 5%미만의 review에서만 발생하는 단어는 제외하였다.
+* 351개의 단어가 됐다.
+* 48351개의 단어가 삭제됐다.
+
+```{r}
+imdb_tfidf2<-removeSparseTerms(imdb_tfidf,0.950)
+imdb_tfidf2
+```
+
+* TF-IDF : 전체 review중 5%미만의 review에서만 발생하는 단어는 제외하였다.
+* 351개의 단어가 됐다.
+* 48351개의 단어가 삭제됐다.
+
+<br/>
+#### 4번-A
+
+```{r}
+#TDF processing
+processed_imdb<-data.frame(as.matrix(imdb_dtm2))
+colnames(processed_imdb)<-make.names(colnames(processed_imdb))
+processed_imdb$sentiment<-imdb$sentiment
+imdb_train<-processed_imdb[1:5000,]
+imdb_test<-processed_imdb[5001:10000,]
+#TF-IDF processing
+processed_imdb2<-data.frame(as.matrix(imdb_tfidf2))
+colnames(processed_imdb2)<-make.names(colnames(processed_imdb2))
+processed_imdb2$sentiment<-imdb$sentiment
+imdb_train2<-processed_imdb2[1:5000,]
+imdb_test2<-processed_imdb2[5001:10000,]
+
+#randomforest - TDF
+set.seed(123)
+rf<-randomForest(sentiment~.,data=imdb_train,ntree=50)
+rf_prob<-predict(rf,newdata=imdb_test,type="prob")
+rf_pred<-predict(rf,newdata=imdb_test,type="class")
+confusionMatrix(rf_pred,imdb_test$sentiment,positive="positive")
+```
+
+* TDF를 랜덤 포레스트 한결과 0.7924의 Accuracy가 나왔다.
+
+```{r}
+#random forest - TF-IDF
+set.seed(123)
+rf2<-randomForest(sentiment~.,data=imdb_train2,ntree=50)
+rf2_prob<-predict(rf2,newdata=imdb_test2,type="prob")
+rf2_pred<-predict(rf2,newdata=imdb_test2,type="class")
+confusionMatrix(rf2_pred,imdb_test2$sentiment,positive="positive")
+```
+
+* TF-IDF를 랜덤포레스트 한 결과 Accuracy가 0.7986 나왔다.
+* TDF를 랜덤포레스트한것 보다 아주 약간 높게 나왔다.
+
+```{r}
+#logistic regression - TDF
+set.seed(123)
+lr<-glm(sentiment~.,data=imdb_train,family="binomial")
+lr_prob<-predict(lr,imdb_test,type="response")
+lr_pred<-rep("negative",nrow(imdb_test))
+lr_pred[lr_prob>0.5]<-"positive"
+confusionMatrix(factor(lr_pred),imdb_test$sentiment,positive="positive")
+```
+
+* TDF를 logistic regression 한 결과 Accuracy가 0.81이 나왔다.
+
+```{r}
+#logistic regression - TF-IDF
+set.seed(123)
+lr2<-glm(sentiment~.,data=imdb_train2,family="binomial")
+lr2_prob<-predict(lr2,imdb_test2,type="response")
+lr2_pred<-rep("negative",nrow(imdb_test2))
+lr2_pred[lr2_prob>0.5]<-"positive"
+confusionMatrix(factor(lr2_pred),imdb_test2$sentiment,positive="positive")
+```
+
+* TF-IDF를 logistic regression 한 결과 Accuracy가 0.8122가 나왔다.
+
+```{r}
+#ROC Curves
+rf_prediction<-prediction(rf_prob[,2],imdb_test$sentiment,c("negative","positive"))
+rf_perf<-performance(rf_prediction,measure="tpr",x.measure="fpr")
+lr_prediction<-prediction(lr_prob,imdb_test$sentiment,c("negative","positive"))
+lr_perf<-performance(lr_prediction,measure="tpr",x.measure="fpr")
+rf_auc<-performance(rf_prediction,measure="auc")
+rf_auc@y.values
+lr_auc<-performance(lr_prediction,measure="auc")
+lr_auc@y.values
+```
+
+```{r}
+plot(rf_perf,col="darkred",lwd=2)
+plot(lr_perf,col="darkblue",lwd=2,add=TRUE)
+```
+
+* DTF와 TF-IDF는 큰 차이가 없어 DTF를 비교한 ROC Curve와 AUC를 이용해 그래프로 나타내었다.
+* ntree를 50으로 한 Random Forest와 Logistic Regression을 비교한 결과 Logistic Regression이 더 Accuracy가 높게 나왔다.
+* Random Forest(ntree=50)의 Accuracy : 0.7924
+* Logistic Regression의 Accuracy 0.81
+* AUC는 Random Forest는 0.8698944, Logistic Regression은 0.8906926이 나왔다.
+
+<br/>
+#### 4번-B
+
+* 최종 선택한 모델은 Logistic Regression으로, Random Forest보다 Accuracy와 AUC가 더 높게 나타났다. 
+* Logistic Regression Accuracy : 0.81 

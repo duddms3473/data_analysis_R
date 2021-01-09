@@ -1,0 +1,173 @@
+---
+title: "데이터분석 과제 #5"
+author: "이영은"
+output: html_document
+---
+
+```{r}
+library(dslabs)
+library(ggplot2)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(randomForest)
+
+#1-A
+mnist<-dslabs::read_mnist()
+#1-B
+train_x<-mnist$train$images[1:2000,1:784]
+train_y<-data.frame(as.factor(mnist$train$labels[1:2000]))
+colnames(train_y)<-paste("target")
+ggplot(train_y,aes(x=target))+geom_bar()+labs(title="train_y의 분포")
+```
+
+```{r}
+#1-C
+colnames(train_x)<-paste0("V",1:784)
+#1-D
+del<-nearZeroVar(train_x)
+str(del)
+train_x<-train_x[,-del]
+```
+
+총 540개의 feature가 제외된다.
+
+```{r}
+#1-E
+traln<-cbind(train_y,train_x)
+#1-F
+test_x<-mnist$test$images
+test_y<-data.frame(as.factor(mnist$test$labels))
+colnames(test_y)<-paste("target")
+colnames(test_x)<-paste0("V",1:784)
+test_x<-test_x[,-del]
+test<-cbind(test_y,test_x)
+
+
+#2번
+print_Image<-function(x){
+  image(1:28,1:28,matrix(mnist$test$images[x,],nrow=28)[,28:1],col=gray(seq(0,1,0.05)),xlab="",ylab="")
+}
+
+print_Image(9)
+mnist$test$labels[9]
+print_Image(19)
+mnist$test$labels[19]
+print_Image(42)
+mnist$test$labels[42]
+```
+
+19번과 42번은 3과 7같았지만, 9번은 5라고 알아보기 힘들었다.
+
+```{r}
+#3번-A
+
+set.seed(123)
+rt<-rpart(target~.,data=traln,method="class",control=list(minbucket=50,cp=0))
+rpart.plot(rt)
+```
+
+21개의 leaf node
+최대 depth는 6이다.
+
+```{r}
+#3번-B
+set.seed(123)
+rt2<-rpart(target~.,data=traln,method="class",control=list(maxdepth=3,cp=0))
+rpart.plot(rt2)
+```
+
+leafnode가 8개가 나왔다.
+
+feature는 총 0부터 9까지 10개였는데, 8개가 나오고 4가 중복되었다.
+실제 classification으로 활용될 수 없을 것 같다.
+
+```{r}
+#4번-A
+set.seed(123)
+rt3<-rpart(target~.,data=traln,method="class",control=list(cp=0))
+
+#4-B
+plotcp(rt3)
+printcp(rt3)
+rt4<-rpart(target~.,data=traln,method="class",control=list(c=0.00168919))
+rpart.plot(rt4)
+```
+
+cp가 0.00168919일때 예측오차가 가장 적다.
+leaf node 는 15개이다.
+
+```{r}
+#4-C
+prunned_rt<-prune(rt3,cp=0.00168919)
+
+#4-D
+pred_class<-predict(prunned_rt,newdata=test,type="class")
+confusionMatrix(pred_class,test$target)
+```
+
+Accuracy가 0.7066으로 약 70%이다.
+숫자 5에대한 balanced accuracy가 약 73%로가장 낮다.
+
+```{r}
+#5-A
+
+set.seed(123)
+bag<-randomForest(target~.,data=traln,mtry=245)
+head(bag$predicted)
+head(bag$mse)
+plot(bag)
+```
+
+0에서 40까지는 tree의 수가 증가할수록 error가 확연히 줄어들었다.
+하지만 그이후로는 tree의개수가 500까지 된다고 해도 error rate 변화가 크게 없는것으로 보인다.
+
+
+```{r}
+#5-B
+pred_bag<-predict(bag,newdata=test,type="class")
+confusionMatrix(pred_bag,test$target)
+```
+
+Accuracy는 0.8965으로 약 89%의 정확도를 갖는다.
+prunned tree에서는 숫자 5에대한 balanced accuracy가 73%로 제일 낮았다.
+하지만 bagging을 적용한 결과는 약 94%까지 정확도가 상승했다.
+정확도가 70%에서 89%로 상승했다. 
+prunned tree보다 bagging을 한것이 더 좋다.
+
+```{r}
+#5-C
+rf<-randomForest(target~.,data=traln)
+plot(bag,col="darkred")
+plot(rf,col="darkblue",add=TRUE)
+```
+
+빨강색은 bagging을 한결과이고, 파랑색은 random forest를 한 결과이다.
+상대적으로 파랑색이 error rate가 좀더 낮다.
+test set에 적용한 결과 bagging보다 random forest가 error rate가 낮을 것을 알 수 있다.
+
+```{r}
+#5-D
+pred_rf<-predict(rf,newdata=test,type="class")
+confusionMatrix(pred_rf,test$target)
+```
+
+Accuracy가 0.9129로, 약 91%이다.
+bagging은 accuracy가 89% 였는데 정확도가 2% 더 증가했다.
+
+
+5-E -> 가장정확 : 1, 가장 부정확 : 8
+숫자 1은 balanced accuracy가 0.9881로, 약 99%로 분류가 쉽고,
+반면 숫자 8은 0.9227로, 약 92%로 10개의 수 중 가장 분류가 어렵다는것을 알 수 있다.
+
+
+```{r}
+#5-F
+xxx<-data.frame(test$target)
+xxxx<-cbind(xxx,pred_rf)
+print_Image(1261)
+print_Image(1717)
+```
+
+실제 값은 7이지만 1로 분류된 숫자들이다.
+숫자를 제대로 쓰지않아 7로 생각하기 힘들다.

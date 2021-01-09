@@ -1,0 +1,183 @@
+---
+title: "Assignment 7"
+author: "Lee Young Eun"
+date: '2020 6 9 '
+output: html_document
+---
+</br>
+1번
+</br>
+```{r}
+movie<-read.csv("movie.csv")
+colSums(movie[2:20])
+```
+
+* 가장 많은 영화를 포함하는 장르는 716개를 갖는 Drama 이다.
+* Unknown을 제외한 가장 적은 영화를 포함하는 장르는 Fantasy 이다.
+
+</br>
+2번
+</br>
+
+```{r}
+row<-rowSums(movie[2:20])
+row<-data.frame(row)
+mean(row[,1])
+max(row[,1])
+choose<-data.frame(movie[(row[,1]==6),1])
+choose
+```
+
+* 한 영화당 평균적으로 1.7개의 장르를 포함하고 있다.
+* 가장 많은 장르를 포함한 영화는 6개의 장르를 갖는다.
+* 6개의 장르를 갖는 영화는 Empire Strikes Back, Transformers, Kid in King Arthurs's Court 3가지이다.
+
+</br>
+3-A
+</br>
+
+```{r}
+hc_comp<-hclust(dist(movie[2:20]),method="complete")
+hc_avg<-hclust(dist(movie[2:20]),method="average")
+hc_sin<-hclust(dist(movie[2:20]),method="single")
+plot(hc_comp,cex=0.3,xlab="",sub="Hierarchical clustering-complete")
+plot(hc_avg,cex=0.3,xlab="",sub="Hierarchical clustering-average")
+plot(hc_sin,cex=0.3,xlab="",sub="Hierarchical clustering-single")
+```
+
+</br>
+3-B
+</br>
+
+* complete linkage가 가장 밸런스 있게 나타났고, 그다음은 average, 그리고 single linkage가 가장 밸런스가 좋지 않게 나타났다.
+
+</br>
+3-C
+</br>
+
+```{r}
+max(hc_comp$height)
+min(hc_comp$height)
+```
+
+* comlete 일 경우, height 범위는 0~3.16이다.
+
+```{r}
+max(hc_avg$height)
+min(hc_avg$height)
+```
+
+* average 일 경우, height 범위는 0~2.58이다.
+
+```{r}
+max(hc_sin$height)
+min(hc_sin$height)
+```
+
+* single 일 경우, height 범위는 0~1.41이다.
+
+* complete는 가장 큰 dissimilarity를 기준으로 cluster를 구하고, average는 평균으로, single은 가장 작은 값으로 구한다. 따라서 complete 일경우에 최대 height 범위가 3.16으로 가장 크게 나왔고, single일 때가 최대 height 범위가 약 1.41로 가장 적었다.
+
+</br>
+3-D
+</br>
+
+```{r}
+hc_comp2<-cutree(hc_comp,k=10)
+plot(hc_comp2,col=1:10,xlab="")
+hc_avg2<-cutree(hc_avg,k=10)
+plot(hc_avg2,col=1:10,xlab="",sub="")
+hc_sin2<-cutree(hc_sin,k=10)
+plot(hc_sin2,col=1:10,xlab="",sub="")
+
+hist(hc_comp2)
+hist(hc_sin2)
+hist(hc_avg2)
+```
+
+* single은 거의 분류가 안 된것을 알 수 있다.
+* complete가 가장 다양하게 분류 되었다.
+
+
+</br>
+4-A
+</br>
+
+```{r}
+set.seed(123)
+km10<-kmeans(movie[2:20],centers=10,nstart=10)
+km10
+km10$tot.withinss
+
+set.seed(123)
+km100<-kmeans(movie[2:20],centers=10,nstart=100)
+km100
+km100$tot.withinss
+
+set.seed(123)
+km1000<-kmeans(movie[2:20],centers=10,nstart=1000)
+km1000
+km1000$tot.withinss
+```
+
+* nstart=10 일때, 목적함수 값 : 953.682
+* nstart=100 일때, 목적함수 값 : 933.543
+* nstart=1000 일때, 목적함수 값 : 896.0884
+* nstart가 클수록 목적함수의 값이 작아졌다.
+* 따라서 데이터 사이의 변동을 최소화 하기위해, nstart를 큰 1000으로 하는것이 좋다.
+
+</br>
+4-B
+</br>
+
+```{r}
+km1000$size
+```
+
+* nstart = 1000으로 kmeans한 결과 각 클러스터에 속하는 영화의 개수가 3번의 D에서보다 더 골고루 분배 되었다. 3번의 D에서는 대부분이 첫번째 클러스터에 포함 되었었지만, 이 클러스터링에서는 10개의 클러스터에 골고루 분배가 된것을 알 수 있다.
+
+</br>
+4-C
+</br>
+
+```{r}
+matrix<-as(km1000$centers,"matrix")
+round(matrix,3)
+```
+
+* 클러스터링 결과 클러스터별 포함되는 장르를 matrix로 나타낸 것이다.
+* 1번,2번,9번 클러스터에는 Drama가 필수적이었다.
+* 6번 클러스터에 포함된 영화는 대부분 Action 장르에 포함된다.
+
+</br>
+4-D
+</br>
+
+```{r}
+movie[movie$Title=="Titanic (1997)",]
+km1000$cluster[311]
+movie[km1000$cluster==9,1][1:5]
+```
+
+* 'Titanic (1997)'영화는 9번클러스터에 포함되어서 9번 클러스터에서 상위 5개의 영화를 출력했다.
+* Postino, Il(1994), Angels and Insects (1995) Mad Love(1995), Legends of the Fall(1994) Phenomenon(1996) 이 다섯개 영화들이 Titanic (1997)과 유사한 장르의 영화로 나왔다.
+
+</br>
+4-E
+</br>
+
+```{r}
+set.seed(123)
+km_clu5<-kmeans(movie[2:20],centers=5,nstart=1000)
+matrix2<-as(km_clu5$centers,"matrix")
+round(matrix2,3)
+movie[movie$Title=="Titanic (1997)",]
+km_clu5$cluster[311]
+movie[km_clu5$cluster==2,1][1:5]
+```
+
+* k=10 일때, drama를 무조건 포함하는 클러스터가 3개가 있었는데, k=5일때는 drama를 무조건 포함하는 클러스터는 1개가 되었다.
+* k=5일때의 클러스터중 Action을 무조건 포함하는 클러스터가 나타났다.
+* k=5일때의 'Titanic (1997)' 영화는 2번 클러스터에 해당한다.
+* 2번클러스터의 상위 5개를 출력한결과 shanghai Triad, Twelve Monkeys, Dead Man walking, Richard III, Positino,Il이 나왔다.
+* Postino, Il 영화는 k=10일때와 마찬가지로 같은 클러스터에 포함되는 것을 알 수 있다.
